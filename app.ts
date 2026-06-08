@@ -65,8 +65,7 @@ const PORT = 3000;
 
 //คำสั่งรันserver npx nodemon server.ts
 
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`Server running at http://${localIP}:${PORT}/`);
-  console.log(`Login route: http://localhost:${PORT}/`);
-  console.log(`Register route: http://localhost:${PORT}/register`);
+const port = process.env.PORT || 3000; // Render จะส่ง PORT มาให้ หรือถ้าไม่มีให้ใช้ 3000
+app.listen(Number(port), '0.0.0.0', () => {
+  console.log(`Server is running on port ${port}`);
 });
