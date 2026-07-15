@@ -236,6 +236,7 @@ router.get('/:id',async (req,res)=>{
             SELECT 
                 i.ing_id, 
                 i.ing_name, 
+                i.ing_thai_name,
                 i.ing_detail, 
                 i.ing_image, 
                 i.ing_type_id,
