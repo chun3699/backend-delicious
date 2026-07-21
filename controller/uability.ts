@@ -58,7 +58,6 @@ router.post("/add-inventory", async (req, res) => {
 router.get("/inventory/:uid", async (req, res) => {
   try {
     const uid = req.params.uid;
-    // แสดงเฉพาะรายการที่มี amount = 1 (หรือจะแสดงทั้งหมดก็ได้ตามต้องการ)
     const sql = `
       SELECT 
         i.ing_id, 
@@ -67,10 +66,12 @@ router.get("/inventory/:uid", async (req, res) => {
         i.ing_image, 
         i.ing_detail, 
         i.ing_type_id,
+        t.ing_type_name AS type_name,  -- ✅ เพิ่มบรรทัดนี้ เพื่อดึงชื่อหมวดหมู่
         ui.amount 
       FROM user_ingredient ui
       JOIN ingredient i ON ui.ing_id = i.ing_id
-      WHERE ui.u_id = ? AND ui.amount = 1
+      LEFT JOIN typeIngredient t ON i.ing_type_id = t.ing_type_id -- ✅ JOIN ตารางหมวดหมู่
+      WHERE ui.u_id = ?
     `;
 
     const [rows]: any = await conn.query(sql, [uid]);
@@ -100,4 +101,29 @@ router.put("/toggle-inventory", async (req, res) => {
   }
 });
 
-// ลบ (DELETE /remove-inventory) คงเดิมตามที่คุณมีอยู่ครับ
+// ==========================================
+// API ลบวัตถุดิบออกจากคลังของผู้ใช้ (DELETE /remove-inventory)
+// ==========================================
+router.delete("/remove-inventory", async (req, res) => {
+  try {
+    const { uid, ing_id } = req.body;
+
+    if (!uid || !ing_id) {
+      return res.status(400).json({ 
+        error: "กรุณาส่งรหัสผู้ใช้ (uid) และ รหัสวัตถุดิบ (ing_id)" 
+      });
+    }
+
+    const sql = "DELETE FROM `user_ingredient` WHERE u_id = ? AND ing_id = ?";
+    const [result] = await conn.execute<ResultSetHeader>(sql, [uid, ing_id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "ไม่พบวัตถุดิบนี้ในคลังของคุณ" });
+    }
+
+    res.status(200).json({ message: "ลบวัตถุดิบเรียบร้อยแล้ว" });
+  } catch (error) {
+    console.error("❌ Delete Inventory Error:", error);
+    res.status(500).json({ error: "เกิดข้อผิดพลาดในการลบวัตถุดิบ" });
+  }
+});
