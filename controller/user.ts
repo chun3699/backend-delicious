@@ -36,9 +36,15 @@ router.get("/users/:id",async(req,res)=>{
     try {
     const id = req.params.id;
 
-    const [rows] = await conn.query("SELECT * FROM `user` WHERE uid = ?", [id]);
+    const [rows]: any = await conn.query("SELECT * FROM `user` WHERE uid = ?", [id]);
 
-    res.json(rows);
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({ error: "ไม่พบผู้ใช้งาน" });
+    }
+
+    const user = rows[0];
+    delete user.u_password;
+    res.json(user);
   } catch (error) {
     console.error("❌ Database error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -267,7 +273,7 @@ router.put("/update/:id", async (req, res) => {
     // 3. Update database โดยใช้แค่ 4 ฟิลด์ที่มีในตาราง
     const updateSql = `
       UPDATE user
-      SET u_name = ?, u_password = ?, u_profile = ?, u_role = ?
+      SET u_name = ?, u_password = ?, u_profile = ?, u_role = ?, u_email = ?
       WHERE uid = ?
     `;
     
@@ -276,6 +282,7 @@ router.put("/update/:id", async (req, res) => {
       updateUser.u_password,
       updateUser.u_profile,
       updateUser.u_role,
+      updateUser.u_email ?? userOri.u_email,
       user_id
     ]);
 
@@ -349,11 +356,8 @@ router.post("/add-user", async (req, res) => {
     // 4. จัดการค่าว่าง (กรณีไม่ได้ส่งรูปหรือสิทธิ์มา ให้ใช้ค่าเริ่มต้น)
     const profileUrl = (u_profile && u_profile !== "") ? u_profile : "-";
     const userRole = (u_role && u_role !== "") ? u_role : "user";
+    const hashedPassword = await bcrypt.hash(u_password, 10);
 
-    // ⚠️ ข้อควรระวัง: ในระบบใช้งานจริง ควรเข้ารหัส u_password (เช่น ใช้ bcrypt) ก่อนบันทึกลง Database ด้วยนะครับ
-    // ตัวอย่างเช่น: const hashedPassword = await bcrypt.hash(u_password, 10);
-
-    // 5. บันทึกข้อมูลลงฐานข้อมูล
     const insertSql = `
       INSERT INTO \`user\` (u_name, u_password, u_profile, u_role ,u_email) 
       VALUES (?, ?, ?, ?, ?)
@@ -361,7 +365,7 @@ router.post("/add-user", async (req, res) => {
     
     const [result] = await conn.execute<ResultSetHeader>(insertSql, [
       u_name,
-      u_password, // ถ้ามี bcrypt ให้เปลี่ยนเป็น hashedPassword 
+      hashedPassword,
       profileUrl,
       userRole,
       u_email
