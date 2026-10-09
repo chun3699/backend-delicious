@@ -87,12 +87,18 @@ async function getOrCreateIngredient(name: string) {
   return result.insertId;
 }
 
+// ปรับปรุงฟังก์ชันบันทึกวัตถุดิบ ให้รองรับทั้ง unit_id และ unitId จากฝั่งหน้าจอ
 async function saveFoodIngredients(connection: any, foodId: number, ingredients: any[]) {
   await connection.query("DELETE FROM `food_component` WHERE food_id = ?", [foodId]);
 
   for (const item of ingredients || []) {
     const ingName = (item.name || item.ing_name || "").toString().trim();
     const amount = (item.amount ?? item.ing_amount ?? "-").toString().trim() || "-";
+    
+    // ดึงค่า unit_id หรือ unitId ที่ส่งมาจาก Frontend อย่างปลอดภัย
+    const rawUnitId = item.unit_id ?? item.unitId;
+    const unitId = rawUnitId ? Number(rawUnitId) : 1; 
+
     let ingId = item.ing_id ? Number(item.ing_id) : null;
 
     if (!ingId && !ingName) continue;
@@ -101,8 +107,8 @@ async function saveFoodIngredients(connection: any, foodId: number, ingredients:
     }
 
     await connection.query(
-      "INSERT INTO `food_component` (food_id, ing_id, amount) VALUES (?, ?, ?)",
-      [foodId, ingId, amount]
+      "INSERT INTO `food_component` (food_id, ing_id, amount, unit_id) VALUES (?, ?, ?, ?)",
+      [foodId, ingId, amount, unitId]
     );
   }
 }
@@ -154,6 +160,17 @@ router.get("/", async (req, res) => {
   } catch (error) {
     console.error("❌ Get Food Error:", error);
     res.status(500).json({ error: "เกิดข้อผิดพลาดที่เซิร์ฟเวอร์" });
+  }
+});
+
+// ดึงข้อมูลหน่วยนับทั้งหมด
+router.get("/unit", async (req, res) => {
+  try {
+    const [rows] = await conn.query("SELECT * FROM `unit`");
+    res.status(200).json(rows);
+  } catch (error) {
+    console.error("❌ Get Units Error:", error);
+    res.status(500).json({ error: "เกิดข้อผิดพลาดในการดึงข้อมูลหน่วยนับ" });
   }
 });
 
@@ -256,10 +273,14 @@ router.put("/update/:id", async (req, res) => {
     const foodName = (name || food_name || existing[0].food_name).toString().trim();
     const description = (content ?? food_description ?? existing[0].food_description).toString();
     const image = (imageUrl ?? food_image ?? existing[0].food_image).toString();
-    const typeId = await getOrCreateFoodType(
-      category || food_type_name,
-      food_type_id || existing[0].food_type_id
-    );
+    // ถ้าฝั่งแอปส่งชื่อหมวดหมู่ (category) มาใหม่ ให้หาหรือสร้าง ID จากชื่อนั้น
+    // แต่ถ้าไม่ได้ส่งมาเลย ค่อยกลับไปใช้ ID เดิมจากฐานข้อมูล
+    let typeId;
+    if (category || food_type_name) {
+      typeId = await getOrCreateFoodType(category || food_type_name);
+    } else {
+      typeId = food_type_id || existing[0].food_type_id;
+    }
 
     await connection.beginTransaction();
 
@@ -325,7 +346,7 @@ router.delete("/:id", async (req, res) => {
 });
 
 // ==========================================
-// 2. รับ ID แล้วแสดงข้อมูลเมนูอาหาร (รวม amount จาก food_component)
+// 2. รับ ID แล้วแสดงข้อมูลเมนูอาหาร (ส่ง unit_id กลับไปด้วย)
 // ==========================================
 router.get("/:id", async (req, res) => {
   try {
@@ -356,6 +377,8 @@ router.get("/:id", async (req, res) => {
       ...row,
       name: row.ing_name,
       amount: row.amount,
+      unit_id: Number(row.unit_id || 1), // เพิ่มบรรทัดนี้
+      unitId: Number(row.unit_id || 1),
     }));
 
     res.status(200).json({
