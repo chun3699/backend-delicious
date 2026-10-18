@@ -38,22 +38,25 @@ router.get('/', async (req, res) => {
 // ==========================================
 router.post("/add", async (req, res) => {
   try {
-    const { ing_name, ing_image, ing_detail, ing_type_id } = req.body;
+    // 1. ดึง ing_thai_name เพิ่มเข้ามาจาก req.body
+    const { ing_name, ing_thai_name, ing_image, ing_detail, ing_type_id } = req.body;
 
     // ตรวจสอบว่าส่งข้อมูลสำคัญมาครบหรือไม่
     if (!ing_name || !ing_type_id) {
       return res.status(400).json({ error: "กรุณาส่งชื่อวัตถุดิบ (ing_name) และรหัสประเภท (type_id)" });
     }
 
+    // 2. เพิ่มคอลัมน์ ing_thai_name ในคำสั่ง SQL
     const sql = `
-      INSERT INTO ingredient (ing_name, ing_image, ing_detail, ing_type_id) 
-      VALUES (?, ?, ?, ?)
+      INSERT INTO ingredient (ing_name, ing_thai_name, ing_image, ing_detail, ing_type_id) 
+      VALUES (?, ?, ?, ?, ?)
     `;
     
     const [result] = await conn.query<ResultSetHeader>(sql, [
       ing_name,
-      ing_image || "https://cdn-icons-png.flaticon.com/512/149/149071.png",    // ถ้าไม่มีรูป ให้ใส่
-      ing_detail || "-",   // ถ้าไม่มีรายละเอียด ให้ใส่ "-"
+      ing_thai_name || null, // ถ้าไม่ได้กรอกมาให้เป็นค่า NULL หรือสติงว่าง
+      ing_image || "https://cdn-icons-png.flaticon.com/512/149/149071.png",
+      ing_detail || "-",
       ing_type_id
     ]);
 
