@@ -59,8 +59,8 @@ async function getOrCreateFoodType(typeName: string, existingTypeId?: number) {
 async function getOrCreateIngredient(name: string) {
   const ingName = name.trim();
   const [rows]: any = await conn.query(
-    "SELECT ing_id FROM `ingredient` WHERE LOWER(TRIM(ing_name)) = LOWER(?) LIMIT 1",
-    [ingName]
+    "SELECT ing_id FROM `ingredient` WHERE LOWER(TRIM(ing_name)) = LOWER(?) OR LOWER(TRIM(ing_thai_name)) = LOWER(?) LIMIT 1",
+    [ingName, ingName]
   );
   if (rows.length > 0) {
     return Number(rows[0].ing_id);
@@ -75,9 +75,10 @@ async function getOrCreateIngredient(name: string) {
   }
 
   const [result] = await conn.query<ResultSetHeader>(
-    `INSERT INTO ingredient (ing_name, ing_image, ing_detail, ing_type_id)
-     VALUES (?, ?, ?, ?)`,
+    `INSERT INTO ingredient (ing_name, ing_thai_name, ing_image, ing_detail, ing_type_id)
+     VALUES (?, ?, ?, ?, ?)`,
     [
+      ingName,
       ingName,
       "https://cdn-icons-png.flaticon.com/512/3143/3143645.png",
       "-",
@@ -87,7 +88,6 @@ async function getOrCreateIngredient(name: string) {
   return result.insertId;
 }
 
-// ปรับปรุงฟังก์ชันบันทึกวัตถุดิบ ให้รองรับทั้ง unit_id และ unitId จากฝั่งหน้าจอ
 async function saveFoodIngredients(connection: any, foodId: number, ingredients: any[]) {
   await connection.query("DELETE FROM `food_component` WHERE food_id = ?", [foodId]);
 
@@ -95,7 +95,6 @@ async function saveFoodIngredients(connection: any, foodId: number, ingredients:
     const ingName = (item.name || item.ing_name || "").toString().trim();
     const amount = (item.amount ?? item.ing_amount ?? "-").toString().trim() || "-";
     
-    // ดึงค่า unit_id หรือ unitId ที่ส่งมาจาก Frontend อย่างปลอดภัย
     const rawUnitId = item.unit_id ?? item.unitId;
     const unitId = rawUnitId ? Number(rawUnitId) : 1; 
 
@@ -273,8 +272,7 @@ router.put("/update/:id", async (req, res) => {
     const foodName = (name || food_name || existing[0].food_name).toString().trim();
     const description = (content ?? food_description ?? existing[0].food_description).toString();
     const image = (imageUrl ?? food_image ?? existing[0].food_image).toString();
-    // ถ้าฝั่งแอปส่งชื่อหมวดหมู่ (category) มาใหม่ ให้หาหรือสร้าง ID จากชื่อนั้น
-    // แต่ถ้าไม่ได้ส่งมาเลย ค่อยกลับไปใช้ ID เดิมจากฐานข้อมูล
+    
     let typeId;
     if (category || food_type_name) {
       typeId = await getOrCreateFoodType(category || food_type_name);
@@ -346,7 +344,7 @@ router.delete("/:id", async (req, res) => {
 });
 
 // ==========================================
-// 2. รับ ID แล้วแสดงข้อมูลเมนูอาหาร (ส่ง unit_id กลับไปด้วย)
+// 2. รับ ID แล้วแสดงข้อมูลเมนูอาหาร (ดึง ing_thai_name มาส่งให้ Frontend)
 // ==========================================
 router.get("/:id", async (req, res) => {
   try {
@@ -365,7 +363,7 @@ router.get("/:id", async (req, res) => {
     }
 
     const sqlComponents = `
-      SELECT fc.*, i.ing_name, i.ing_image, i.ing_detail
+      SELECT fc.*, i.ing_name, i.ing_thai_name, i.ing_image, i.ing_detail
       FROM \`food_component\` fc
       JOIN \`ingredient\` i ON fc.ing_id = i.ing_id
       WHERE fc.food_id = ?
@@ -375,9 +373,13 @@ router.get("/:id", async (req, res) => {
 
     const ingredients = componentRows.map((row: any) => ({
       ...row,
-      name: row.ing_name,
+      name: row.ing_thai_name && row.ing_thai_name.toString().trim() !== '' 
+            ? row.ing_thai_name 
+            : row.ing_name,
+      ing_name: row.ing_name,
+      ing_thai_name: row.ing_thai_name,
       amount: row.amount,
-      unit_id: Number(row.unit_id || 1), // เพิ่มบรรทัดนี้
+      unit_id: Number(row.unit_id || 1),
       unitId: Number(row.unit_id || 1),
     }));
 

@@ -64,6 +64,7 @@ const localIP = getLocalIP();
 const PORT = 3000;
 
 //คำสั่งรันserver npx nodemon server.ts
+//"apiEndpoint" : "http://10.0.2.2:3000"
 
 const port = process.env.PORT || 3000; // Render จะส่ง PORT มาให้ หรือถ้าไม่มีให้ใช้ 3000
 app.listen(Number(port), '0.0.0.0', () => {
