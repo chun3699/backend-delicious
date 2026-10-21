@@ -125,38 +125,66 @@ router.post("/google-login", async (req, res) => {
     // 1. ตรวจสอบ Token กับทาง Google
     const ticket = await client.verifyIdToken({
       idToken: idToken,
-      audience: CLIENT_ID, 
+      audience: CLIENT_ID,
     });
 
     // 2. ดึงข้อมูล User จาก Google
     const payload = ticket.getPayload();
     if (!payload || !payload.email) {
-      return res.status(400).json({ error: "ไม่สามารถดึงข้อมูลอีเมลจาก Google ได้" });
+      return res
+        .status(400)
+        .json({ error: "ไม่สามารถดึงข้อมูลอีเมลจาก Google ได้" });
     }
 
-    const email = payload.email;
+    // เช็คว่า Google ยืนยันอีเมลนี้แล้ว
+    if (!payload.email_verified) {
+      return res
+        .status(400)
+        .json({ error: "อีเมลนี้ยังไม่ได้รับการยืนยันจาก Google" });
+    }
+
+    const email = payload.email.trim().toLowerCase();
     const name = payload.name || "Google User";
-    const picture = payload.picture || "https://cdn-icons-png.flaticon.com/512/149/149071.png";
+    const picture =
+      payload.picture ||
+      "https://cdn-icons-png.flaticon.com/512/149/149071.png";
 
     const connection = await conn.getConnection();
 
     try {
       // 3. ค้นหาใน Database ว่ามีอีเมลนี้หรือยัง
-      const [rows]: any = await connection.query("SELECT * FROM `user` WHERE u_email = ?", [email]);
-      
+      const [rows]: any = await connection.query(
+        "SELECT * FROM user WHERE u_email = ?",
+        [email]
+      );
+
       let user = rows.length > 0 ? rows[0] : null;
 
       // 4. ถ้ายังไม่มี (สมัครสมาชิกใหม่)
       if (!user) {
-        const insertSql = "INSERT INTO `user` (u_name,  u_profile, u_role ,u_email ) VALUES (?, ?, 'user' ,?)";
-        const [insertResult]: any = await connection.query(insertSql, [name, email, picture]);
-        
-        // ดึงข้อมูลที่เพิ่ง insert มาใช้งาน
-        const [newRows]: any = await connection.query("SELECT * FROM `user` WHERE uid = ?", [insertResult.insertId]);
+        // ลำดับค่าใน array ต้องตรงกับลำดับคอลัมน์: u_name, u_profile, u_email
+        // ON DUPLICATE KEY ใช้ได้เมื่อมี UNIQUE ที่ u_email แล้ว
+        // (กันกรณีมีคำขอเข้ามาพร้อมกันสองครั้ง)
+        const insertSql = `
+          INSERT INTO \`user\` (u_name, u_profile, u_role, u_email)
+          VALUES (?, ?, 'user', ?)
+          ON DUPLICATE KEY UPDATE uid = LAST_INSERT_ID(uid)
+        `;
+        const [insertResult]: any = await connection.query(insertSql, [
+          name,
+          picture,
+          email,
+        ]);
+
+        // ดึงข้อมูลที่เพิ่ง insert (หรือแถวเดิมกรณีซ้ำ) มาใช้งาน
+        const [newRows]: any = await connection.query(
+          "SELECT * FROM user WHERE uid = ?",
+          [insertResult.insertId]
+        );
         user = newRows[0];
       }
 
-      // ✅ 5. สร้าง JWT Token กลับไปให้ Flutter
+      // 5. สร้าง JWT Token กลับไปให้ Flutter
       const jwtPayload = {
         uid: user.uid,
         username: user.u_name,
@@ -172,14 +200,12 @@ router.post("/google-login", async (req, res) => {
           u_name: user.u_name,
           u_email: user.u_email,
           u_profile: user.u_profile,
-          u_role: user.u_role
-        }
+          u_role: user.u_role,
+        },
       });
-
     } finally {
       connection.release();
     }
-
   } catch (error) {
     console.error("❌ Google Login Error:", error);
     res.status(401).json({ error: "การยืนยันตัวตนกับ Google ล้มเหลว" });
