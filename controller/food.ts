@@ -400,6 +400,8 @@ router.get("/:id", async (req, res) => {
 router.post("/recommend", async (req, res) => {
   try {
     const { userInventoryIds, uid } = req.body;
+    console.log("📌 UID ที่ได้รับ:", uid);
+    console.log("📌 Inventory IDs ที่ได้รับ:", userInventoryIds);
 
     if (!Array.isArray(userInventoryIds)) {
       return res.status(400).json({ error: "รูปแบบข้อมูลไม่ถูกต้อง" });
@@ -478,7 +480,7 @@ router.post("/recommend", async (req, res) => {
       // ถ้าสถานะเหมือนกัน ให้เรียงตามเปอร์เซ็นต์ความพร้อมจากมากไปน้อยตามเดิม
       return b.matchPercentage - a.matchPercentage;
     });
-    
+
     res.status(200).json({ status: "success", data: recommendationResults });
   } catch (error) {
     res.status(500).json({ error: "เกิดข้อผิดพลาดในระบบ" });
