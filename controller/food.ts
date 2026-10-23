@@ -397,35 +397,36 @@ router.get("/:id", async (req, res) => {
 // ==========================================
 // 3. สำหรับแนะนำอาหาร (รองรับ amount)
 // ==========================================
+// ==========================================
+// 3. สำหรับแนะนำอาหาร (รองรับ amount และ Foodmark)
+// ==========================================
 router.post("/recommend", async (req, res) => {
   try {
     const { userInventoryIds, uid } = req.body;
-    console.log("📌 UID ที่ได้รับ:", uid);
-    console.log("📌 Inventory IDs ที่ได้รับ:", userInventoryIds);
 
     if (!Array.isArray(userInventoryIds)) {
       return res.status(400).json({ error: "รูปแบบข้อมูลไม่ถูกต้อง" });
     }
 
+    // แปลง Inventory IDs เป็นตัวเลขทั้งหมดเก็บไว้ใน Set
     const userInventorySet = new Set(userInventoryIds.map(Number));
 
-    const sqlRecipes = `
-        SELECT f.food_id, f.food_name, f.food_image, fc.ing_id, fc.amount 
-        FROM \`food\` f
-        JOIN \`food_component\` fc ON f.food_id = fc.food_id
-    `;
-
-    // 2. ดึงรายการอาหารที่ผู้ใช้คนนี้กดบันทึกไว้ใน foodmark (สมมติว่าตารางชื่อ foodmark มีฟิลด์ uid และ food_id)
+    // 1. ดึงรายการอาหารที่ผู้ใช้กด foodmark ไว้ (แปลง food_id เป็น Number ป้องกัน String/Number ชนกัน)
     const bookmarkedFoodIds = new Set();
     if (uid) {
       const [foodmarkRows] = await conn.query<any[]>(
         `SELECT food_id FROM foodmark WHERE uid = ?`,
         [uid]
       );
-      // ⭐️ ห่อด้วย Number() ป้องกันปัญหา String vs Number
       foodmarkRows.forEach((row) => bookmarkedFoodIds.add(Number(row.food_id)));
     }
 
+    const sqlRecipes = `
+        SELECT f.food_id, f.food_name, f.food_image, fc.ing_id, fc.amount 
+        FROM \`food\` f
+        JOIN \`food_component\` fc ON f.food_id = fc.food_id
+    `;
+    
     const [recipeRows] = await conn.query<any[]>(sqlRecipes);
 
     const recipesMap = new Map<number, any>();
@@ -451,15 +452,11 @@ router.post("/recommend", async (req, res) => {
       const totalNeeded = recipe.requiredIngredients.length;
 
       recipe.requiredIngredients.forEach((reqIng: any) => {
-        // ⭐️ แปลงเป็น Number() ทั้งคู่เพื่อป้องกันปัญหาชนิดข้อมูลไม่ตรงกัน (String vs Number)
-        const ingredientIdNum = Number(reqIng.ing_id);
-        
-        if (userInventorySet.has(ingredientIdNum)) {
+        // ⭐️ แปลงเป็น Number() เพื่อให้ตรงกับ userInventorySet
+        if (userInventorySet.has(Number(reqIng.ing_id))) {
           matchCount++;
         }
       });
-
-      console.log(`เมนู ${recipe.name}: ตรงกัน ${matchCount} จาก ${totalNeeded}`);
 
       if (matchCount > 0) {
         let matchPercentage = (matchCount / totalNeeded) * 100;
@@ -473,22 +470,21 @@ router.post("/recommend", async (req, res) => {
       }
     });
 
-    // 3. ปรับปรุงการเรียงลำดับ (Sorting) ให้ foodmark ขึ้นก่อน แล้วค่อยเรียงตาม matchPercentage
+    // 2. จัดเรียงลำดับ (Sorting): Foodmark ขึ้นก่อน -> ตามด้วย matchPercentage
     recommendationResults.sort((a, b) => {
-      // ⭐️ ห่อด้วย Number() ตอนเช็กด้วยเช่นกัน เพื่อให้ชนิดข้อมูลตรงกันชัวร์ๆ
       const aMarked = bookmarkedFoodIds.has(Number(a.recipeId)) ? 1 : 0;
       const bMarked = bookmarkedFoodIds.has(Number(b.recipeId)) ? 1 : 0;
 
-      // ถ้าสถานะการกด mark ไม่เท่ากัน ให้เมนูที่ถูก mark ขึ้นมาก่อน (1 มาก่อน 0)
       if (aMarked !== bMarked) {
         return bMarked - aMarked;
       }
 
-      // ถ้าสถานะเหมือนกัน ให้เรียงตามเปอร์เซ็นต์ความพร้อมจากมากไปน้อยตามเดิม
       return b.matchPercentage - a.matchPercentage;
     });
+    
     res.status(200).json({ status: "success", data: recommendationResults });
   } catch (error) {
+    console.error("Recommend Error:", error);
     res.status(500).json({ error: "เกิดข้อผิดพลาดในระบบ" });
   }
 });
