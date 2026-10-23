@@ -399,7 +399,7 @@ router.get("/:id", async (req, res) => {
 // ==========================================
 router.post("/recommend", async (req, res) => {
   try {
-    const { userInventoryIds } = req.body;
+    const { userInventoryIds, uid } = req.body;
 
     if (!Array.isArray(userInventoryIds)) {
       return res.status(400).json({ error: "รูปแบบข้อมูลไม่ถูกต้อง" });
@@ -412,6 +412,17 @@ router.post("/recommend", async (req, res) => {
         FROM \`food\` f
         JOIN \`food_component\` fc ON f.food_id = fc.food_id
     `;
+
+    // 2. ดึงรายการอาหารที่ผู้ใช้คนนี้กดบันทึกไว้ใน foodmark (สมมติว่าตารางชื่อ foodmark มีฟิลด์ uid และ food_id)
+    const bookmarkedFoodIds = new Set();
+    if (uid) {
+      const [foodmarkRows] = await conn.query<any[]>(
+        `SELECT food_id FROM foodmark WHERE uid = ?`,
+        [uid]
+      );
+      foodmarkRows.forEach((row) => bookmarkedFoodIds.add(row.food_id));
+    }
+
     const [recipeRows] = await conn.query<any[]>(sqlRecipes);
 
     const recipesMap = new Map<number, any>();
@@ -454,7 +465,20 @@ router.post("/recommend", async (req, res) => {
       }
     });
 
-    recommendationResults.sort((a, b) => b.matchPercentage - a.matchPercentage);
+    // 3. ปรับปรุงการเรียงลำดับ (Sorting) ให้ foodmark ขึ้นก่อน แล้วค่อยเรียงตาม matchPercentage
+    recommendationResults.sort((a, b) => {
+      const aMarked = bookmarkedFoodIds.has(a.recipeId) ? 1 : 0;
+      const bMarked = bookmarkedFoodIds.has(b.recipeId) ? 1 : 0;
+
+      // ถ้าสถานะการกด mark ไม่เท่ากัน ให้เมนูที่ถูก mark ขึ้นมาก่อน (1 มาก่อน 0)
+      if (aMarked !== bMarked) {
+        return bMarked - aMarked;
+      }
+
+      // ถ้าสถานะเหมือนกัน ให้เรียงตามเปอร์เซ็นต์ความพร้อมจากมากไปน้อยตามเดิม
+      return b.matchPercentage - a.matchPercentage;
+    });
+    
     res.status(200).json({ status: "success", data: recommendationResults });
   } catch (error) {
     res.status(500).json({ error: "เกิดข้อผิดพลาดในระบบ" });
