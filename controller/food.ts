@@ -418,16 +418,12 @@ router.post("/recommend", async (req, res) => {
     // 2. ดึงรายการอาหารที่ผู้ใช้คนนี้กดบันทึกไว้ใน foodmark (สมมติว่าตารางชื่อ foodmark มีฟิลด์ uid และ food_id)
     const bookmarkedFoodIds = new Set();
     if (uid) {
-      try {
-        const [foodmarkRows] = await conn.query<any[]>(
-          `SELECT food_id FROM foodmark WHERE uid = ?`,
-          [uid]
-        );
-        foodmarkRows.forEach((row) => bookmarkedFoodIds.add(row.food_id));
-        console.log("📌 รายการ Foodmark ที่พบ:", Array.from(bookmarkedFoodIds));
-      } catch (markError) {
-        console.error("⚠️ ดึง foodmark ไม่สำเร็จ (อาจจะยังไม่มีตาราง):", markError);
-      }
+      const [foodmarkRows] = await conn.query<any[]>(
+        `SELECT food_id FROM foodmark WHERE uid = ?`,
+        [uid]
+      );
+      // ⭐️ ห่อด้วย Number() ป้องกันปัญหา String vs Number
+      foodmarkRows.forEach((row) => bookmarkedFoodIds.add(Number(row.food_id)));
     }
 
     const [recipeRows] = await conn.query<any[]>(sqlRecipes);
@@ -479,8 +475,9 @@ router.post("/recommend", async (req, res) => {
 
     // 3. ปรับปรุงการเรียงลำดับ (Sorting) ให้ foodmark ขึ้นก่อน แล้วค่อยเรียงตาม matchPercentage
     recommendationResults.sort((a, b) => {
-      const aMarked = bookmarkedFoodIds.has(a.recipeId) ? 1 : 0;
-      const bMarked = bookmarkedFoodIds.has(b.recipeId) ? 1 : 0;
+      // ⭐️ ห่อด้วย Number() ตอนเช็กด้วยเช่นกัน เพื่อให้ชนิดข้อมูลตรงกันชัวร์ๆ
+      const aMarked = bookmarkedFoodIds.has(Number(a.recipeId)) ? 1 : 0;
+      const bMarked = bookmarkedFoodIds.has(Number(b.recipeId)) ? 1 : 0;
 
       // ถ้าสถานะการกด mark ไม่เท่ากัน ให้เมนูที่ถูก mark ขึ้นมาก่อน (1 มาก่อน 0)
       if (aMarked !== bMarked) {
@@ -490,7 +487,6 @@ router.post("/recommend", async (req, res) => {
       // ถ้าสถานะเหมือนกัน ให้เรียงตามเปอร์เซ็นต์ความพร้อมจากมากไปน้อยตามเดิม
       return b.matchPercentage - a.matchPercentage;
     });
-
     res.status(200).json({ status: "success", data: recommendationResults });
   } catch (error) {
     res.status(500).json({ error: "เกิดข้อผิดพลาดในระบบ" });
