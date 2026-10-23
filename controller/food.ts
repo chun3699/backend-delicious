@@ -455,10 +455,15 @@ router.post("/recommend", async (req, res) => {
       const totalNeeded = recipe.requiredIngredients.length;
 
       recipe.requiredIngredients.forEach((reqIng: any) => {
-        if (userInventorySet.has(reqIng.ing_id)) {
+        // ⭐️ แปลงเป็น Number() ทั้งคู่เพื่อป้องกันปัญหาชนิดข้อมูลไม่ตรงกัน (String vs Number)
+        const ingredientIdNum = Number(reqIng.ing_id);
+        
+        if (userInventorySet.has(ingredientIdNum)) {
           matchCount++;
         }
       });
+
+      console.log(`เมนู ${recipe.name}: ตรงกัน ${matchCount} จาก ${totalNeeded}`);
 
       if (matchCount > 0) {
         let matchPercentage = (matchCount / totalNeeded) * 100;
