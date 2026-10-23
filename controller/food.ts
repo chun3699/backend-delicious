@@ -418,11 +418,16 @@ router.post("/recommend", async (req, res) => {
     // 2. ดึงรายการอาหารที่ผู้ใช้คนนี้กดบันทึกไว้ใน foodmark (สมมติว่าตารางชื่อ foodmark มีฟิลด์ uid และ food_id)
     const bookmarkedFoodIds = new Set();
     if (uid) {
-      const [foodmarkRows] = await conn.query<any[]>(
-        `SELECT food_id FROM foodmark WHERE uid = ?`,
-        [uid]
-      );
-      foodmarkRows.forEach((row) => bookmarkedFoodIds.add(row.food_id));
+      try {
+        const [foodmarkRows] = await conn.query<any[]>(
+          `SELECT food_id FROM foodmark WHERE uid = ?`,
+          [uid]
+        );
+        foodmarkRows.forEach((row) => bookmarkedFoodIds.add(row.food_id));
+        console.log("📌 รายการ Foodmark ที่พบ:", Array.from(bookmarkedFoodIds));
+      } catch (markError) {
+        console.error("⚠️ ดึง foodmark ไม่สำเร็จ (อาจจะยังไม่มีตาราง):", markError);
+      }
     }
 
     const [recipeRows] = await conn.query<any[]>(sqlRecipes);
